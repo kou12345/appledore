@@ -23,6 +23,8 @@ func main() {
 	e := echo.New()
 	e.Use(middleware.Logger())
 
+	// TODO UTCをJSTに変更
+
 	e.GET("/", GetPosts)
 	e.GET("/post/:id", GetPost)
 	e.POST("/post", NewPost)
@@ -42,6 +44,7 @@ type Post struct {
 
 func GetPosts(c echo.Context) error {
 	db := ConnectionDB()
+	defer db.Close()
 
 	var posts []Post
 
@@ -84,6 +87,7 @@ func GetPost(c echo.Context) error {
 	// idを元にpostsをSELECT
 
 	db := ConnectionDB()
+	defer db.Close()
 
 	var post Post
 	err := db.QueryRow(`
@@ -112,6 +116,7 @@ func NewPost(c echo.Context) error {
 	// validation
 
 	db := ConnectionDB()
+	defer db.Close()
 
 	// postsにINSERT
 	// prepared statementを作成
@@ -150,6 +155,7 @@ func UpdatePost(c echo.Context) error {
 	// validation
 
 	db := ConnectionDB()
+	defer db.Close()
 
 	// postsをUPDATE
 
@@ -181,6 +187,7 @@ func DeletePost(c echo.Context) error {
 	id := c.Param("id")
 
 	db := ConnectionDB()
+	defer db.Close()
 
 	// postsをDELETE
 	// prepared statementを作成
