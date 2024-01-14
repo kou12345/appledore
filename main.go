@@ -13,14 +13,6 @@ import (
 	_ "github.com/lib/pq"
 )
 
-// type Template struct {
-// 	templates *template.Template
-// }
-
-// func (t *Template) Render(w io.Writer, name string, data interface{}, c echo.Context) error {
-// 	return t.templates.ExecuteTemplate(w, name, data)
-// }
-
 func main() {
 
 	err := godotenv.Load()
@@ -28,52 +20,98 @@ func main() {
 		log.Fatal("Error loading .env file")
 	}
 
-	// t := &Template{
-	// 	templates: template.Must(template.ParseGlob("public/views/*.html")),
-	// }
-
 	e := echo.New()
 	e.Use(middleware.Logger())
 
-	// e.Renderer = t
-
-	e.GET("/hello", Hello)
-	e.POST("/post", Post)
-
-	e.GET("/", func(c echo.Context) error {
-		return c.String(200, "Hello, World!")
-	})
+	e.GET("/", GetPosts)
+	e.GET("/post/:id", GetPost)
+	e.POST("/post", NewPost)
+	e.PUT("/post/:id", UpdatePost)
+	e.DELETE("/post/:id", DeletePost)
 
 	e.Logger.Fatal(e.Start(":1323"))
 }
 
-func Hello(c echo.Context) error {
-	return c.Render(http.StatusOK, "hello", "World")
+type Post struct {
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Content   string    `json:"content"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
-func Post(c echo.Context) error {
+func GetPosts(c echo.Context) error {
+	db := ConnectionDB()
+
+	var posts []Post
+
+	// postsをSELECT
+	rows, err := db.Query(`
+		SELECT 
+			id,
+			title,
+			content,
+			created_at,
+			updated_at
+		FROM
+			posts;
+	`)
+	if err != nil {
+		log.Fatal("QueryError: ", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var post Post
+		if err := rows.Scan(&post.ID, &post.Title, &post.Content, &post.CreatedAt, &post.UpdatedAt); err != nil {
+			log.Fatal("ScanError: ", err)
+		}
+		posts = append(posts, post)
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Fatal("RowsError: ", err)
+	}
+
+	return c.JSON(http.StatusOK, posts)
+}
+
+func GetPost(c echo.Context) error {
+
+	// TODO Titleで取得できた方が良いかも
+	id := c.Param("id")
+
+	// idを元にpostsをSELECT
+
+	db := ConnectionDB()
+
+	var post Post
+	err := db.QueryRow(`
+		SELECT 
+			id,
+			title,
+			content,
+			created_at,
+			updated_at
+		FROM
+			posts
+		WHERE
+			id = $1;
+	`, id).Scan(&post.ID, &post.Title, &post.Content, &post.CreatedAt, &post.UpdatedAt)
+	if err != nil {
+		log.Fatal("QueryRowError: ", err)
+	}
+
+	return c.JSON(http.StatusOK, post)
+}
+
+func NewPost(c echo.Context) error {
 	title := c.FormValue("title")
 	content := c.FormValue("content")
 
 	// validation
 
-	// .envからdsnを取得
-	dsn := os.Getenv("DSN")
-	if len(dsn) == 0 {
-		log.Fatal("DSN is empty")
-	}
-
-	// DB接続
-	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		log.Fatal("OpenError: ", err)
-	}
-	defer db.Close()
-
-	// DB接続確認
-	if err := db.Ping(); err != nil {
-		log.Fatal("PingError: ", err)
-	}
+	db := ConnectionDB()
 
 	// postsにINSERT
 	// prepared statementを作成
@@ -102,4 +140,87 @@ func Post(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, id)
+}
+
+func UpdatePost(c echo.Context) error {
+	id := c.Param("id")
+	title := c.FormValue("title")
+	content := c.FormValue("content")
+
+	// validation
+
+	db := ConnectionDB()
+
+	// postsをUPDATE
+
+	// prepared statementを作成
+	stmt, err := db.Prepare(`
+		UPDATE 
+			posts
+		SET
+			title = $1,
+			content = $2,
+			updated_at = $3
+		WHERE
+			id = $4;
+	`)
+	if err != nil {
+		log.Fatal("PrepareError: ", err)
+	}
+
+	// prepared statementを実行
+	_, err = stmt.Exec(title, content, time.Now(), id)
+	if err != nil {
+		log.Fatal("ExecError: ", err)
+	}
+
+	return c.JSON(http.StatusOK, id)
+}
+
+func DeletePost(c echo.Context) error {
+	id := c.Param("id")
+
+	db := ConnectionDB()
+
+	// postsをDELETE
+	// prepared statementを作成
+	stmt, err := db.Prepare(`
+		DELETE FROM
+			posts
+		WHERE
+			id = $1;
+	`)
+	if err != nil {
+		log.Fatal("PrepareError: ", err)
+	}
+
+	// prepared statementを実行
+	_, err = stmt.Exec(id)
+	if err != nil {
+		log.Fatal("ExecError: ", err)
+	}
+
+	return c.JSON(http.StatusOK, id)
+}
+
+// DBインスタンスを作成
+func ConnectionDB() *sql.DB {
+	// .envからdsnを取得
+	dsn := os.Getenv("DSN")
+	if len(dsn) == 0 {
+		log.Fatal("DSN is empty")
+	}
+
+	// DB接続
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		log.Fatal("OpenError: ", err)
+	}
+
+	// DB接続確認
+	if err := db.Ping(); err != nil {
+		log.Fatal("PingError: ", err)
+	}
+
+	return db
 }
