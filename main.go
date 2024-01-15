@@ -26,6 +26,7 @@ func main() {
 	// TODO UTCをJSTに変更
 
 	e.GET("/", GetPosts)
+	e.GET("/search", Search)
 	e.GET("/post/:id", GetPost)
 	e.POST("/post", NewPost)
 	e.PUT("/post/:id", UpdatePost)
@@ -50,15 +51,15 @@ func GetPosts(c echo.Context) error {
 
 	// postsをSELECT
 	rows, err := db.Query(`
-		SELECT 
-			id,
-			title,
-			content,
-			created_at,
-			updated_at
-		FROM
-			posts;
-	`)
+        SELECT 
+            id,
+            title,
+            content,
+            created_at,
+            updated_at
+        FROM
+            posts;
+    `)
 	if err != nil {
 		log.Fatal("QueryError: ", err)
 	}
@@ -69,11 +70,50 @@ func GetPosts(c echo.Context) error {
 		if err := rows.Scan(&post.ID, &post.Title, &post.Content, &post.CreatedAt, &post.UpdatedAt); err != nil {
 			log.Fatal("ScanError: ", err)
 		}
+
 		posts = append(posts, post)
 	}
 
 	if err := rows.Err(); err != nil {
 		log.Fatal("RowsError: ", err)
+	}
+
+	return c.JSON(http.StatusOK, posts)
+}
+
+func Search(c echo.Context) error {
+	// query parameterを取得 検索文字列
+	searchText := c.QueryParam("search")
+
+	db := ConnectionDB()
+	defer db.Close()
+
+	var posts []Post
+
+	stmt, err := db.Prepare(`
+        SELECT
+            *
+        FROM
+            posts
+        WHERE 
+			content &@ $1 OR title &@ $1;
+    `)
+	if err != nil {
+		log.Fatal("PrepareError: ", err)
+	}
+
+	rows, err := stmt.Query(searchText)
+	if err != nil {
+		log.Fatal("QueryError: ", err)
+	}
+
+	for rows.Next() {
+		var post Post
+		if err := rows.Scan(&post.ID, &post.Title, &post.Content, &post.CreatedAt, &post.UpdatedAt); err != nil {
+			log.Fatal("ScanError: ", err)
+		}
+
+		posts = append(posts, post)
 	}
 
 	return c.JSON(http.StatusOK, posts)
@@ -91,17 +131,17 @@ func GetPost(c echo.Context) error {
 
 	var post Post
 	err := db.QueryRow(`
-		SELECT 
-			id,
-			title,
-			content,
-			created_at,
-			updated_at
-		FROM
-			posts
-		WHERE
-			id = $1;
-	`, id).Scan(&post.ID, &post.Title, &post.Content, &post.CreatedAt, &post.UpdatedAt)
+        SELECT 
+            id,
+            title,
+            content,
+            created_at,
+            updated_at
+        FROM
+            posts
+        WHERE
+            id = $1;
+    `, id).Scan(&post.ID, &post.Title, &post.Content, &post.CreatedAt, &post.UpdatedAt)
 	if err != nil {
 		log.Fatal("QueryRowError: ", err)
 	}
@@ -121,18 +161,18 @@ func NewPost(c echo.Context) error {
 	// postsにINSERT
 	// prepared statementを作成
 	stmt, err := db.Prepare(`
-		INSERT INTO posts (
-			title,
-			content,
-			created_at,
-			updated_at
-		) VALUES (
-			$1,
-			$2,
-			$3,
-			$4
-		) RETURNING id
-	`)
+        INSERT INTO posts (
+            title,
+            content,
+            created_at,
+            updated_at
+        ) VALUES (
+            $1,
+            $2,
+            $3,
+            $4
+        ) RETURNING id
+    `)
 	if err != nil {
 		log.Fatal("PrepareError: ", err)
 	}
@@ -161,15 +201,15 @@ func UpdatePost(c echo.Context) error {
 
 	// prepared statementを作成
 	stmt, err := db.Prepare(`
-		UPDATE 
-			posts
-		SET
-			title = $1,
-			content = $2,
-			updated_at = $3
-		WHERE
-			id = $4;
-	`)
+        UPDATE 
+            posts
+        SET
+            title = $1,
+            content = $2,
+            updated_at = $3
+        WHERE
+            id = $4;
+    `)
 	if err != nil {
 		log.Fatal("PrepareError: ", err)
 	}
@@ -192,11 +232,11 @@ func DeletePost(c echo.Context) error {
 	// postsをDELETE
 	// prepared statementを作成
 	stmt, err := db.Prepare(`
-		DELETE FROM
-			posts
-		WHERE
-			id = $1;
-	`)
+        DELETE FROM
+            posts
+        WHERE
+            id = $1;
+    `)
 	if err != nil {
 		log.Fatal("PrepareError: ", err)
 	}
