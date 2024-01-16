@@ -43,3 +43,45 @@ Echo
 Templ
 HTMX
 Tailwind
+
+## curl
+
+### 投稿一覧を取得
+
+```sh
+curl -X GET http://localhost:1323/ | jq
+```
+
+### 検索
+
+```sh
+curl -X GET http://localhost:1323/search\?search\=検索文字列 | jq
+```
+
+### 投稿詳細を取得
+
+```sh
+❯ curl -X GET http://localhost:1323/post/:id | jq
+```
+
+### 投稿をする
+
+```sh
+curl -X POST http://localhost:1323/post \
+     -d "title=サンプルタイトル" \
+     -d "content=サンプルコンテンツ"
+```
+
+### 編集する
+
+```sh
+curl -X PUT http://localhost:1323/post/id \
+     -d "title=ほげ" \
+     -d "content=よよっよよよy"
+```
+
+### 削除する
+
+```sh
+curl -X DELETE http://localhost:1323/post/:id
+```
