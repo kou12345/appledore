@@ -3,37 +3,15 @@ package main
 import (
 	"database/sql"
 	"log"
-	"net/http"
 	"os"
 	"time"
 
 	"github.com/joho/godotenv"
+	"github.com/kou12345/appledore-backend/handler"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	_ "github.com/lib/pq"
 )
-
-func main() {
-
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Error loading .env file")
-	}
-
-	e := echo.New()
-	e.Use(middleware.Logger())
-
-	// TODO UTCをJSTに変更
-
-	e.GET("/", GetPosts)
-	e.GET("/search", Search)
-	e.GET("/post/:id", GetPost)
-	e.POST("/post", NewPost)
-	e.PUT("/post/:id", UpdatePost)
-	e.DELETE("/post/:id", DeletePost)
-
-	e.Logger.Fatal(e.Start(":1323"))
-}
 
 type Post struct {
 	ID        string    `json:"id"`
@@ -43,215 +21,37 @@ type Post struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-func GetPosts(c echo.Context) error {
-	db := ConnectionDB()
+func main() {
+	e := echo.New()
+	e.Use(middleware.Logger())
+
+	// .envファイルを読み込む
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
+	// DB接続
+	db := ConnectDB()
 	defer db.Close()
 
-	var posts []Post
+	// handlerにDBインスタンスを渡す
+	h := &handler.Handler{DB: db}
 
-	// postsをSELECT
-	rows, err := db.Query(`
-        SELECT 
-            id,
-            title,
-            content,
-            created_at,
-            updated_at
-        FROM
-            posts;
-    `)
-	if err != nil {
-		log.Fatal("QueryError: ", err)
-	}
-	defer rows.Close()
+	// ルーティング
+	e.GET("/", h.GetPosts)
+	e.GET("/search", h.Search)
+	e.GET("/post/:id", h.GetPost)
+	e.POST("/post", h.CreatePost)
+	e.PUT("/post/:id", h.UpdatePost)
+	e.DELETE("/post/:id", h.DeletePost)
 
-	for rows.Next() {
-		var post Post
-		if err := rows.Scan(&post.ID, &post.Title, &post.Content, &post.CreatedAt, &post.UpdatedAt); err != nil {
-			log.Fatal("ScanError: ", err)
-		}
-
-		posts = append(posts, post)
-	}
-
-	if err := rows.Err(); err != nil {
-		log.Fatal("RowsError: ", err)
-	}
-
-	return c.JSON(http.StatusOK, posts)
-}
-
-func Search(c echo.Context) error {
-	// query parameterを取得 検索文字列
-	searchText := c.QueryParam("search")
-
-	db := ConnectionDB()
-	defer db.Close()
-
-	var posts []Post
-
-	stmt, err := db.Prepare(`
-        SELECT
-            *
-        FROM
-            posts
-        WHERE 
-			content &@ $1 OR title &@ $1;
-    `)
-	if err != nil {
-		log.Fatal("PrepareError: ", err)
-	}
-
-	rows, err := stmt.Query(searchText)
-	if err != nil {
-		log.Fatal("QueryError: ", err)
-	}
-
-	for rows.Next() {
-		var post Post
-		if err := rows.Scan(&post.ID, &post.Title, &post.Content, &post.CreatedAt, &post.UpdatedAt); err != nil {
-			log.Fatal("ScanError: ", err)
-		}
-
-		posts = append(posts, post)
-	}
-
-	return c.JSON(http.StatusOK, posts)
-}
-
-func GetPost(c echo.Context) error {
-
-	// TODO Titleで取得できた方が良いかも
-	id := c.Param("id")
-
-	// idを元にpostsをSELECT
-
-	db := ConnectionDB()
-	defer db.Close()
-
-	var post Post
-	err := db.QueryRow(`
-        SELECT 
-            id,
-            title,
-            content,
-            created_at,
-            updated_at
-        FROM
-            posts
-        WHERE
-            id = $1;
-    `, id).Scan(&post.ID, &post.Title, &post.Content, &post.CreatedAt, &post.UpdatedAt)
-	if err != nil {
-		log.Fatal("QueryRowError: ", err)
-	}
-
-	return c.JSON(http.StatusOK, post)
-}
-
-func NewPost(c echo.Context) error {
-	title := c.FormValue("title")
-	content := c.FormValue("content")
-
-	// validation
-
-	db := ConnectionDB()
-	defer db.Close()
-
-	// postsにINSERT
-	// prepared statementを作成
-	stmt, err := db.Prepare(`
-        INSERT INTO posts (
-            title,
-            content,
-            created_at,
-            updated_at
-        ) VALUES (
-            $1,
-            $2,
-            $3,
-            $4
-        ) RETURNING id
-    `)
-	if err != nil {
-		log.Fatal("PrepareError: ", err)
-	}
-
-	var id string
-	// prepared statementを実行
-	err = stmt.QueryRow(title, content, time.Now(), time.Now()).Scan(&id)
-	if err != nil {
-		log.Fatal("ExecError: ", err)
-	}
-
-	return c.JSON(http.StatusOK, id)
-}
-
-func UpdatePost(c echo.Context) error {
-	id := c.Param("id")
-	title := c.FormValue("title")
-	content := c.FormValue("content")
-
-	// validation
-
-	db := ConnectionDB()
-	defer db.Close()
-
-	// postsをUPDATE
-
-	// prepared statementを作成
-	stmt, err := db.Prepare(`
-        UPDATE 
-            posts
-        SET
-            title = $1,
-            content = $2,
-            updated_at = $3
-        WHERE
-            id = $4;
-    `)
-	if err != nil {
-		log.Fatal("PrepareError: ", err)
-	}
-
-	// prepared statementを実行
-	_, err = stmt.Exec(title, content, time.Now(), id)
-	if err != nil {
-		log.Fatal("ExecError: ", err)
-	}
-
-	return c.JSON(http.StatusOK, id)
-}
-
-func DeletePost(c echo.Context) error {
-	id := c.Param("id")
-
-	db := ConnectionDB()
-	defer db.Close()
-
-	// postsをDELETE
-	// prepared statementを作成
-	stmt, err := db.Prepare(`
-        DELETE FROM
-            posts
-        WHERE
-            id = $1;
-    `)
-	if err != nil {
-		log.Fatal("PrepareError: ", err)
-	}
-
-	// prepared statementを実行
-	_, err = stmt.Exec(id)
-	if err != nil {
-		log.Fatal("ExecError: ", err)
-	}
-
-	return c.JSON(http.StatusOK, id)
+	// サーバー起動
+	e.Logger.Fatal(e.Start(":1323"))
 }
 
 // DBインスタンスを作成
-func ConnectionDB() *sql.DB {
+func ConnectDB() *sql.DB {
 	// .envからdsnを取得
 	dsn := os.Getenv("DSN")
 	if len(dsn) == 0 {
